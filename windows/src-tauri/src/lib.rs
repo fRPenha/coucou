@@ -25,6 +25,7 @@ mod portal;
 mod recap;
 mod secrets;
 mod session_window;
+mod usage;
 mod settings;
 mod shortcuts;
 mod sounds;
@@ -667,6 +668,7 @@ pub fn run() {
         .manage(Chat::default())
         .manage(shortcuts::Registry::default())
         .manage(recap::load())
+        .manage(usage::Store::default())
         .invoke_handler(tauri::generate_handler![
             boot,
             save_settings,
@@ -714,6 +716,7 @@ pub fn run() {
             shortcuts_status,
             shortcuts_suspend,
             recap::recap_history,
+            usage::usage_sessions,
             recap::recap_prefs,
             recap::recap_set_enabled,
             recap::recap_set_hide_projects,
