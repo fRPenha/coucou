@@ -181,6 +181,10 @@ export const Bridge = {
   /** Turns and decisions from `since` (Unix seconds) on, plus the recap prefs. */
   recapHistory: (since: number) => call<RecapHistory>("recap_history", { since: Math.floor(since) }),
   recapPrefs: () => call<RecapPrefs>("recap_prefs"),
+
+  // ── Meu Claude: token use per session ─────────────────────────────────────
+  /** Sessions with transcript activity since `since` (ms), with their totals. */
+  usageSessions: (since: number) => call<Record<string, import("../views/consumo").UsageEntry>>("usage_sessions", { since: Math.floor(since) }),
   recapSetEnabled: (enabled: boolean) => call<void>("recap_set_enabled", { enabled }),
   recapSetHideProjects: (hide: boolean) => call<void>("recap_set_hide_projects", { hide }),
   /** `week` is the Monday (YYYY-MM-DD) the recap opened on its own for. */

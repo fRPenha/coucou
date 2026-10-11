@@ -18,6 +18,7 @@ import {
 import { State } from "../core/state";
 import { clear, dot, h, svg } from "./dom";
 import { ICONS } from "./icons";
+import { closeConsumo } from "./consumo";
 import { language, tl } from "../i18n/i18n";
 
 /** The Claude pill is in the header: overview, turned on, relay in. */
@@ -48,6 +49,7 @@ export function openPlanColor(): string {
 /** Closes the plan card (view, mode or focus changed). */
 export function closePlanCard(): void {
   State.showingPlanDetail = false;
+  closeConsumo();
 }
 
 // ── Claude numbers ────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import { pillDefinition, sessionSubtitle } from "../core/pills";
 import {
   PlanCard, buildPlanPill, claudePillVisible, codexPillVisible, planCardOpen, refreshCodexPlanUsage,
 } from "./usage";
+import { ConsumoCard, buildConsumoPill, consumoCardOpen } from "./consumo";
 import { buildDiffCard } from "./diff";
 import { lastTextStep } from "../core/diff";
 import { Bridge } from "../core/bridge";
@@ -116,7 +117,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
   // Plan usage pills (off by default): before the gear, Claude first, as on the Mac.
   const claudePill = buildPlanPill(false);
   const codexPill = buildPlanPill(true);
-  const planPills = h("div", { class: "plan-pills" }, claudePill.el, codexPill.el);
+  const consumoPill = buildConsumoPill();
+  const planPills = h("div", { class: "plan-pills" }, consumoPill.el, claudePill.el, codexPill.el);
   let codexShown = false;
 
   function go(v: IslandViewName) {
@@ -154,7 +156,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
     const codexOn = codexPillVisible();
     claudePill.el.style.display = claudeOn ? "" : "none";
     codexPill.el.style.display = codexOn ? "" : "none";
-    planPills.classList.toggle("on", claudeOn || codexOn);
+    consumoPill.sync();
+    planPills.classList.toggle("on", State.view === "overview" || claudeOn || codexOn);
     // Both pills: the right side tightens so it still clears the screen edge.
     headerActions.classList.toggle("both-plans", claudeOn && codexOn);
     if (claudeOn) claudePill.sync();
@@ -194,6 +197,7 @@ function buildOverview(actions: ViewActions): ViewHost {
   const right = card(null, pills);
   // Opened from a plan pill in the header: stands in for the left card.
   const plan = new PlanCard();
+  const consumo = new ConsumoCard();
   let planTimer: number | null = null;
   // Spotify's card and pill are kept and updated in place: the progress bar
   // runs on, and a slider being dragged must not be rebuilt under the pointer.
@@ -208,7 +212,7 @@ function buildOverview(actions: ViewActions): ViewHost {
   let pillIds = "";
   let detailOpen = false;
   let lastFocus: string | null = null;
-  let mode: "ticker" | "card" | "plan" | "diff" | "spotify" | null = null;
+  let mode: "ticker" | "card" | "plan" | "consumo" | "diff" | "spotify" | null = null;
   let cardKey = "";
   /** The list row highlighted at the last sync, to scroll only when it moves. */
   let shownSelection: number | null = null;
@@ -302,6 +306,11 @@ function buildOverview(actions: ViewActions): ViewHost {
       // other pill shows its own card, exactly like IntegrationCardView.
       const sessionActive = task != null && hasSessionTicker(task);
 
+      const consumoOpen = consumoCardOpen();
+      if (mode === "consumo" && !consumoOpen) {
+        mode = null;
+        cardKey = "";
+      }
       const planOpen = planCardOpen();
       if (mode === "plan" && !planOpen) {
         mode = null;
@@ -313,7 +322,14 @@ function buildOverview(actions: ViewActions): ViewHost {
       const diff = task && activeDiffId != null ? State.findDiff(task.id, activeDiffId) : null;
       if (!diff) activeDiffId = null;
 
-      if (planOpen) {
+      if (consumoOpen) {
+        if (mode !== "consumo") {
+          clear(leftBody);
+          leftBody.append(consumo.el);
+          mode = "consumo";
+        }
+        consumo.sync();
+      } else if (planOpen) {
         if (mode !== "plan") {
           clear(leftBody);
           leftBody.append(plan.el);

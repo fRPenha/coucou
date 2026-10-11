@@ -2636,3 +2636,48 @@ html[data-dir="rtl"] #views :is(.bubble, .reply .md-p, .reply .md-h, .reply .md-
   unicode-bidi: plaintext;
   text-align: start;
 }
+
+/* ── Meu Claude: consumo por sessão (views/consumo.ts) ─────────────────── */
+
+.consumo-rows {
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.consumo-label {
+  flex-basis: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.consumo-session {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--dim-2);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.consumo-session:hover .consumo-title {
+  color: var(--ink);
+}
+
+.consumo-usd {
+  flex: 0 0 64px;
+  font-variant-numeric: tabular-nums;
+}
+
+.consumo-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.consumo-back {
+  border: 0;
+  padding: 0 2px;
+  background: none;
+  color: var(--dim-2);
+  font: 600 13px var(--font);
+}
