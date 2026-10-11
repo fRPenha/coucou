@@ -86,14 +86,15 @@ test("this build leaves out what only macOS has, Claude Desktop on Linux and Spo
     assert.ok(windows.includes(id), id);
     assert.ok(linux.includes(id), id);
   }
+  // Fork: the Claude desktop app runs on Linux too.
   assert.ok(windows.includes("agent_claude-desktop"));
-  assert.ok(!linux.includes("agent_claude-desktop"));
+  assert.ok(linux.includes("agent_claude-desktop"));
   // Spotify is read over MPRIS, which only Linux has.
   assert.ok(linux.includes("integration_spotify"));
   assert.ok(!windows.includes("integration_spotify"));
   assert.deepEqual(
     linux.filter((id) => id !== "integration_spotify"),
-    windows.filter((id) => id !== "agent_claude-desktop"),
+    windows,
   );
 });
 
@@ -114,8 +115,8 @@ test("a Linux-only pill can be declared on Linux and is dropped on Windows", () 
   const empty = { mainPill: "integration_claude", activeIntegrations: [] };
   assert.deepEqual(toggleDeclared(empty, "integration_spotify", "linux"), ["integration_spotify"]);
   assert.equal(toggleDeclared(empty, "integration_spotify", "windows"), null);
-  // And the other way round: Claude Desktop stays Windows only.
-  assert.equal(toggleDeclared(empty, "agent_claude-desktop", "linux"), null);
+  // Fork: Claude Desktop can be declared on both.
+  assert.deepEqual(toggleDeclared(empty, "agent_claude-desktop", "linux"), ["agent_claude-desktop"]);
   assert.deepEqual(toggleDeclared(empty, "agent_claude-desktop", "windows"), ["agent_claude-desktop"]);
 });
 
@@ -183,7 +184,7 @@ test("up to four pills next to the main one, never the main one itself", () => {
   assert.equal(toggleDeclared({ ...d, activeIntegrations: four }, "ai_anthropic", "linux"), null);
   assert.equal(toggleDeclared(d, "integration_claude", "linux"), null);
   assert.equal(toggleDeclared(d, "integration_music", "linux"), null);
-  assert.equal(toggleDeclared(d, "agent_claude-desktop", "linux"), null);
+  assert.ok(toggleDeclared(d, "agent_claude-desktop", "linux").includes("agent_claude-desktop"));
   assert.ok(toggleDeclared(d, "agent_claude-desktop", "windows").includes("agent_claude-desktop"));
   assert.deepEqual(toggleDeclared(d, "integration_github", "linux"), ["integration_n8n", "integration_stripe"]);
   // Every chat provider can be declared now that the chat talks to it.

@@ -264,8 +264,10 @@ pub fn find_on_path(stem: &str) -> Option<PathBuf> {
 // Finding and raising a session's window lives in linux_focus.rs. There is no
 // Claude desktop app for Linux.
 
+/// Fork: the Claude desktop app has a Linux build; its launcher is
+/// com.anthropic.Claude.desktop, started the way the desktop starts it.
 pub fn open_claude_desktop() -> bool {
-    false
+    Command::new("gtk-launch").arg("com.anthropic.Claude").spawn().is_ok()
 }
 
 /// Where the Codex CLI may be, best first: $PATH, then the usual per-user

@@ -96,10 +96,10 @@ export const PILL_CATALOG: readonly PillDefinition[] = [
   { id: "agent_hermes", name: "Hermes", color: "#C084FC", category: "agent",
     subtitle: N_("Agent"), source: "agent", support: "yes", connect: hooks },
   // Claude Code sessions run from the Claude desktop app: the relay tags them
-  // from CLAUDE_CODE_ENTRYPOINT, so there is nothing to install. The app has no
-  // Linux build.
+  // from CLAUDE_CODE_ENTRYPOINT, so there is nothing to install. Fork: the app
+  // runs on Linux too (Ubuntu, 2026-10), so the pill is offered on both.
   { id: "agent_claude-desktop", name: "Claude Desktop", color: "#D97757", category: "agent",
-    subtitle: N_("Agent"), source: "agent", support: "windows", connect: none },
+    subtitle: N_("Agent"), source: "agent", support: "yes", connect: none },
   // ── AI for the chat ────────────────────────────────────────────────────────
   { id: "ai_anthropic", name: "Anthropic", color: ACCENT.anthropic, category: "ai",
     subtitle: N_("Chat"), source: "n8n", support: "yes", connect: key("anthropic-api-key") },
