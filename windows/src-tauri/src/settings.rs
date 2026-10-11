@@ -69,6 +69,11 @@ pub struct Settings {
     /// Mochi on the desktop: whether he lives there, and his spot. Owned by
     /// the Rust side (desktop.rs) — what a webview sends back is ignored.
     pub desktop_mochi: DesktopMochiPref,
+    /// Where the user dragged the island: top-left of the panel, in logical
+    /// pixels from the top-left of its display. None = top centre. Owned by
+    /// Rust: save_settings never takes it from a page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub island_offset: Option<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -124,6 +129,7 @@ impl Default for Settings {
             pill_colors: BTreeMap::new(),
             language: String::new(),
             desktop_mochi: DesktopMochiPref::default(),
+            island_offset: None,
         }
     }
 }

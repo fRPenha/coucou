@@ -151,6 +151,8 @@ export interface Settings {
     onDesktop: boolean;
     spot: { x: number; y: number; space: string } | null;
   };
+  /** Where the island was dragged to; null = top centre. Written by Rust only. */
+  islandOffset?: [number, number] | null;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

@@ -3360,6 +3360,17 @@
    "pt-BR": "Permissões",
    "ru": "Разрешения",
    "id": "Izin"
+  },
+  "Move island back to the top": {
+   "zh-Hans": "将灵动岛移回顶部",
+   "hi": "आइलैंड को वापस ऊपर ले जाएँ",
+   "es": "Devolver la isla arriba",
+   "ar": "إعادة الجزيرة إلى الأعلى",
+   "fr": "Remettre l'île en haut",
+   "bn": "আইল্যান্ড আবার উপরে নিন",
+   "pt-BR": "Mover a ilha de volta para o topo",
+   "ru": "Вернуть остров наверх",
+   "id": "Kembalikan pulau ke atas"
   }
  }
 }

@@ -535,6 +535,15 @@ pub fn pin_to_monitor(win: &WebviewWindow, x: i32, y: i32) {
     unsafe { layer::gtk_layer_set_monitor(gtk_window_ptr(&gw), mon_ptr) };
 }
 
+/// Whether the user can drag the island around. A layer surface is placed by
+/// the compositor, anchored to the top edge. On GNOME (XWayland) the island is
+/// an X11 dock window, which set_position still places.
+// ponytail: layer-shell islands stay pinned; moving them would mean driving
+// gtk_layer_set_margin from the drag instead of set_position.
+pub fn island_movable() -> bool {
+    !LAYER_SURFACE.load(Ordering::Relaxed)
+}
+
 /// Temporarily allow keyboard focus so a text field inside the island can be
 /// typed in.
 pub fn set_activating(win: &WebviewWindow, activating: bool) {

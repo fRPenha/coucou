@@ -310,11 +310,19 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let (lw, lh) = if collapsed { (STRIP_W, STRIP_H) } else { (PANEL_W, PANEL_H) };
     let pw = (lw * scale).round().max(1.0) as u32;
     let ph = (lh * scale).round().max(1.0) as u32;
-    let x = mp.x + (ms.width as i32 - pw as i32) / 2;
-    // Fork: below any top panel (GNOME's bar sat over the island's header).
-    // The work area is the monitor minus the panels; layer-shell ignores this
-    // and anchors to the edge itself.
-    let y = m.work_area().position.y.max(mp.y);
+    let offset = saved_offset(app).filter(|_| platform::island_movable());
+    let (x, y) = match offset {
+        Some(off) => {
+            let (ox, oy) = clamp_offset(off, work_area(&m));
+            // The wake strip sits centred under where the panel's top edge is.
+            let ox = if collapsed { ox + (PANEL_W - STRIP_W) / 2.0 } else { ox };
+            (mp.x + (ox * scale).round() as i32, mp.y + (oy * scale).round() as i32)
+        }
+        // Fork: below any top panel (GNOME's bar sat over the island's header).
+        // The work area is the monitor minus the panels; layer-shell ignores this
+        // and anchors to the edge itself.
+        None => (mp.x + (ms.width as i32 - pw as i32) / 2, m.work_area().position.y.max(mp.y)),
+    };
 
     // GTK never sizes a non-resizable window below its natural size (200 px
     // here), so on Linux the 6 px wake strip would stay a 200 px block. tao
@@ -330,6 +338,54 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     // Moving across displays can rescale the window: re-assert the physical size.
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     let _ = win.set_always_on_top(true);
+}
+
+fn saved_offset(app: &AppHandle) -> Option<(f64, f64)> {
+    app.try_state::<crate::Shared>()?.settings.lock().unwrap().island_offset
+}
+
+/// The monitor's work area (minus the panels) in logical pixels from its
+/// top-left: left, top, width, height.
+fn work_area(m: &Monitor) -> (f64, f64, f64, f64) {
+    let scale = m.scale_factor();
+    let (mp, wa) = (m.position(), m.work_area());
+    (
+        (wa.position.x - mp.x).max(0) as f64 / scale,
+        (wa.position.y - mp.y).max(0) as f64 / scale,
+        wa.size.width as f64 / scale,
+        wa.size.height as f64 / scale,
+    )
+}
+
+/// Keeps the whole panel inside the work `area` (left, top, width, height),
+/// so a saved position from a bigger display never leaves the island out of
+/// reach, nor under a top panel.
+pub fn clamp_offset((x, y): (f64, f64), (l, t, w, h): (f64, f64, f64, f64)) -> (f64, f64) {
+    (x.clamp(l, (l + w - PANEL_W).max(l)), y.clamp(t, (t + h - PANEL_H).max(t)))
+}
+
+/// Moves the island by a drag delta in logical pixels.
+pub fn move_by(app: &AppHandle, dx: f64, dy: f64) {
+    if !platform::island_movable() {
+        return;
+    }
+    let Some(win) = window(app) else { return };
+    let Ok(pos) = win.outer_position() else { return };
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let x = pos.x + (dx * scale).round() as i32;
+    let y = pos.y + (dy * scale).round() as i32;
+    let _ = win.set_position(PhysicalPosition::new(x, y));
+}
+
+/// The panel's current top-left as an offset on its display, clamped.
+pub fn current_offset(app: &AppHandle, pref: &str) -> Option<(f64, f64)> {
+    let win = window(app)?;
+    let pos = win.outer_position().ok()?;
+    let m = target_monitor(app, pref)?;
+    let scale = m.scale_factor();
+    let mp = m.position();
+    let off = ((pos.x - mp.x) as f64 / scale, (pos.y - mp.y) as f64 / scale);
+    Some(clamp_offset(off, work_area(&m)))
 }
 
 /// Position, size and scale of the monitor the island lives on. Any change here
@@ -476,5 +532,22 @@ pub fn refresh_click_through(app: &AppHandle, gate: &PollGate) {
 pub fn set_ignore_cursor(app: &AppHandle, ignore: bool) {
     if let Some(win) = window(app) {
         let _ = win.set_ignore_cursor_events(ignore);
+    }
+}
+
+#[cfg(test)]
+mod offset_tests {
+    use super::*;
+
+    #[test]
+    fn a_saved_position_always_keeps_the_panel_in_the_work_area() {
+        // 1920x1080 display with a 32 px top panel.
+        let area = (0.0, 32.0, 1920.0, 1048.0);
+        assert_eq!(clamp_offset((100.0, 200.0), area), (100.0, 200.0));
+        // Never above the screen nor under the top panel.
+        assert_eq!(clamp_offset((-50.0, -10.0), area), (0.0, 32.0));
+        assert_eq!(clamp_offset((5000.0, 5000.0), area), (1920.0 - PANEL_W, 1080.0 - PANEL_H));
+        // A display smaller than the panel pins it to the corner.
+        assert_eq!(clamp_offset((300.0, 300.0), (0.0, 0.0, 600.0, 200.0)), (0.0, 0.0));
     }
 }
