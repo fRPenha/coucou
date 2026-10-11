@@ -11,6 +11,14 @@
 //
 // Reading, the diff, the backup and the write itself live in config_file.rs,
 // shared with every other agent's installer (agents.rs).
+//
+// Fork (Meu Claude): the hooks are a local Claude Code plugin in
+// ~/.claude/skills/coucou-hooks, not entries in settings.json. settings.json
+// can be shared between machines (here a symlink into a dotfiles repo) while
+// Coucou is installed per machine. Claude Code loads that folder as
+// `coucou-hooks@skills-dir` in the CLI and in the desktop app's Code tab
+// (checked 2026-10-10, Claude Code 2.1.282). The status line, when wanted,
+// still goes to settings.json: a plugin cannot carry one.
 
 use std::path::{Path, PathBuf};
 
@@ -83,118 +91,62 @@ fn hook_command(event: &str) -> String {
     agents::relay_command(Shell::Sh, event)
 }
 
-fn entry_is_ours(entry: &Value) -> bool {
-    entry
-        .get("hooks")
-        .and_then(Value::as_array)
-        .map(|hooks| {
-            hooks.iter().any(|h| {
-                h.get("command")
-                    .and_then(Value::as_str)
-                    .map(|c| c.contains(MARKER))
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false)
-}
-
 /// The status line in settings.json is Coucou's relay (old installs wrote
 /// `coucou-hook StatusLine`, new ones `coucou-hook --statusline`; both match).
 fn status_line_is_ours(v: &Value) -> bool {
     v.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(MARKER))
 }
 
-/// Settings with Coucou's hooks added; everything else is left untouched. A
-/// `hooks` (or one of its events) that is not what Claude Code documents is
-/// refused rather than replaced.
-fn merged(existing: &Value) -> Result<Value, String> {
-    let mut root = existing.as_object().cloned().unwrap_or_default();
-    let mut hooks = match root.get("hooks") {
-        None => Map::new(),
-        Some(Value::Object(h)) => h.clone(),
-        Some(_) => return Err(unexpected("\"hooks\"")),
-    };
-
-    for (event, timeout) in HOOK_EVENTS {
-        let mut list = match hooks.get(*event) {
-            None => Vec::new(),
-            Some(Value::Array(list)) => list.clone(),
-            Some(_) => return Err(unexpected(&format!("\"hooks\".\"{event}\""))),
-        };
-        list.retain(|entry| !entry_is_ours(entry));
-        list.push(json!({
-            "hooks": [{
-                "type": "command",
-                "command": hook_command(event),
-                "timeout": timeout,
-            }]
-        }));
-        hooks.insert((*event).to_string(), Value::Array(list));
-    }
-
-    root.insert("hooks".into(), Value::Object(hooks));
-    Ok(Value::Object(root))
-}
-
 fn unexpected(what: &str) -> String {
     crate::i18n::tf("settings.json: {what} has an unexpected type — Coucou has not touched it.", &[("what", what)])
 }
 
-/// Settings with every Coucou entry removed, and nothing else changed.
-fn without_ours(existing: &Value) -> Result<Value, String> {
-    let mut root = existing.as_object().cloned().unwrap_or_default();
-    let hooks = match root.get("hooks") {
-        None => return Ok(Value::Object(root)),
-        Some(Value::Object(h)) => h.clone(),
-        Some(_) => return Err(unexpected("\"hooks\"")),
-    };
-    let mut out = Map::new();
-    for (event, value) in hooks {
-        match value.as_array() {
-            Some(list) => {
-                let kept: Vec<Value> =
-                    list.iter().filter(|e| !entry_is_ours(e)).cloned().collect();
-                if !kept.is_empty() {
-                    out.insert(event, Value::Array(kept));
-                }
-            }
-            None => {
-                out.insert(event, value);
-            }
-        }
-    }
-    if out.is_empty() {
-        root.remove("hooks");
-    } else {
-        root.insert("hooks".into(), Value::Object(out));
-    }
-    Ok(Value::Object(root))
+/// The plugin folder Claude Code loads by itself, without a settings entry.
+pub fn plugin_dir() -> PathBuf {
+    platform::home_dir().join(".claude").join("skills").join("coucou-hooks")
 }
 
+/// The plugin's hooks: every event the island reacts to except approvals.
+// ponytail: PermissionRequest left out on purpose — approvals stay in Claude
+// Code's own prompt instead of waiting up to 108 s for the island. Add it back
+// to HOOK_EVENTS' filter here if approving from the island is wanted.
+fn plugin_hooks() -> Value {
+    let hooks: Map<String, Value> = HOOK_EVENTS
+        .iter()
+        .filter(|(event, _)| *event != "PermissionRequest")
+        .map(|(event, timeout)| {
+            let entry = json!([{ "hooks": [{ "type": "command", "command": hook_command(event), "timeout": timeout }] }]);
+            ((*event).to_string(), entry)
+        })
+        .collect();
+    json!({ "hooks": hooks })
+}
+
+/// Install writes the plugin's two files, uninstall removes them.
 fn edits(install: bool) -> Vec<FileEdit<'static>> {
-    vec![FileEdit {
-        path: settings_path(),
-        edit: config_file::json_edit("settings.json".into(), move |current| {
-            if install { merged(current).map(Some) } else { without_ours(current).map(Some) }
-        }),
-    }]
+    let dir = plugin_dir();
+    let manifest = json!({
+        "name": "coucou-hooks",
+        "version": env!("CARGO_PKG_VERSION"),
+        "description": "Coucou: Claude Code sessions in the island",
+    });
+    vec![
+        FileEdit {
+            path: dir.join(".claude-plugin").join("plugin.json"),
+            edit: config_file::json_edit("plugin.json".into(), move |_| Ok(install.then(|| manifest.clone()))),
+        },
+        FileEdit {
+            path: dir.join("hooks").join("hooks.json"),
+            edit: config_file::json_edit("hooks.json".into(), move |_| Ok(install.then(plugin_hooks))),
+        },
+    ]
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 pub fn status() -> HookStatus {
     let current = read_settings_lossy();
-    let installed = current
-        .get("hooks")
-        .and_then(Value::as_object)
-        .map(|hooks| {
-            hooks
-                .values()
-                .filter_map(Value::as_array)
-                .flatten()
-                .any(entry_is_ours)
-        })
-        .unwrap_or(false);
+    let installed = plugin_dir().join("hooks").join("hooks.json").is_file();
     let hook_path = settings::hook_exe_path();
     HookStatus {
         installed,
@@ -427,14 +379,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_hooks_leave_the_status_line_alone() {
-        let theirs = json!({ "statusLine": { "type": "command", "command": "~/bin/my-line" } });
-        assert_eq!(merged(&theirs).unwrap()["statusLine"], theirs["statusLine"]);
-        assert_eq!(without_ours(&theirs).unwrap()["statusLine"], theirs["statusLine"]);
-        assert!(merged(&json!({})).unwrap().get("statusLine").is_none());
-    }
-
-    #[test]
     fn the_relay_takes_the_status_line_and_keeps_the_users_other_fields() {
         // None yet: ours is added.
         let fresh = status_line_settings(&json!({ "model": "opus" }), true, None).unwrap();
@@ -471,109 +415,41 @@ mod tests {
         assert!(status_line_settings(&json!({ "statusLine": "echo hi" }), true, None).is_err());
     }
 
-    #[test]
-    fn merging_keeps_every_other_setting_and_every_foreign_hook() {
-        let existing = serde_json::json!({
-            "model": "claude-opus-5",
-            "theme": "dark",
-            "enabledPlugins": ["a", "b"],
-            "hooks": {
-                "PreToolUse": [
-                    { "hooks": [{ "type": "command", "command": "someone-elses-tool.exe" }] }
-                ],
-                "SomeEventWeDoNotTouch": [
-                    { "hooks": [{ "type": "command", "command": "keep-me.exe" }] }
-                ]
-            }
-        });
-
-        let after = merged(&existing).unwrap();
-        assert_eq!(after["model"], "claude-opus-5");
-        assert_eq!(after["theme"], "dark");
-        assert_eq!(after["enabledPlugins"], serde_json::json!(["a", "b"]));
-
-        let pre = after["hooks"]["PreToolUse"].as_array().unwrap();
-        assert!(
-            pre.iter().any(|e| serde_json::to_string(e).unwrap().contains("someone-elses-tool.exe")),
-            "another tool's hook was dropped"
-        );
-        assert!(pre.iter().any(entry_is_ours), "our own hook was not added");
-        assert!(after["hooks"]["SomeEventWeDoNotTouch"].is_array());
-
-        // Installing twice still leaves one entry of ours per event. (Compared
-        // by count: another test points HOME elsewhere meanwhile, which moves
-        // the relay path.)
-        let twice = merged(&after).unwrap();
-        assert_eq!(twice["hooks"]["PreToolUse"].as_array().unwrap().iter().filter(|e| entry_is_ours(e)).count(), 1);
-
-        // And removing ours puts it back exactly as it was.
-        let cleaned = without_ours(&after).unwrap();
-        assert_eq!(cleaned, existing);
-    }
-
-    #[test]
-    fn values_of_an_unexpected_type_are_refused_not_replaced() {
-        for odd in [
-            json!({ "hooks": "a string" }),
-            json!({ "hooks": [1, 2] }),
-            json!({ "hooks": { "PreToolUse": { "not": "a list" } } }),
-        ] {
-            assert!(merged(&odd).is_err(), "{odd}");
-        }
-        assert!(without_ours(&json!({ "hooks": 3 })).is_err());
-        // An event we do not install stays as it is, whatever its shape.
-        let kept = json!({ "hooks": { "Custom": "anything" } });
-        assert_eq!(without_ours(&kept).unwrap(), kept);
-    }
-
     /// Everything filesystem-shaped lives in one test on purpose: it points
     /// the home directory at a temp directory, and that is process-wide.
     #[test]
-    fn writing_backs_up_preserves_and_refuses_a_changed_file() {
+    fn the_hooks_are_a_plugin_and_settings_json_is_never_touched() {
         let tmp = std::env::temp_dir().join(format!("coucou-hooks-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join(".claude")).unwrap();
         std::env::set_var(platform::HOME_VAR, &tmp);
+        assert!(plugin_dir().starts_with(&tmp), "the test must not touch the real home");
 
-        let path = settings_path();
-        assert!(path.starts_with(&tmp), "the test must not touch the real home");
+        let settings = br#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"rtk hook"}]}]}}"#;
+        std::fs::write(settings_path(), settings).unwrap();
 
-        // A real-shaped file, written the way PowerShell 5 would: UTF-8 with BOM.
-        let original = r#"{"model":"claude-opus-5","theme":"dark","tui":{"x":1},"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"other-tool.exe"}]}]}}"#;
-        let mut bytes = vec![0xEF, 0xBB, 0xBF];
-        bytes.extend_from_slice(original.as_bytes());
-        std::fs::write(&path, &bytes).unwrap();
-
-        // Install.
-        let plan = preview(true).expect("a BOM must not stop the preview");
+        // Install: the two plugin files, every event but PermissionRequest.
+        let plan = preview(true).unwrap();
         assert!(plan.diff.contains("coucou-hook"), "the diff must show what changes");
-        let backup = write(true, &plan.fingerprint).expect("install should succeed");
-
-        // The backup holds the original bytes, BOM and all.
-        assert_eq!(std::fs::read(&backup).unwrap(), bytes);
-
-        // Everything else survived, and so did the other tool's hook.
-        let after: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(after["model"], "claude-opus-5");
-        assert_eq!(after["theme"], "dark");
-        assert_eq!(after["tui"]["x"], 1);
-        let pre = after["hooks"]["PreToolUse"].as_array().unwrap();
-        assert!(pre.iter().any(|e| serde_json::to_string(e).unwrap().contains("other-tool.exe")));
+        write(true, &plan.fingerprint).expect("install should succeed");
+        let hooks: Value = serde_json::from_slice(&std::fs::read(plugin_dir().join("hooks/hooks.json")).unwrap()).unwrap();
+        assert!(hooks["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap().contains("coucou-hook"));
+        assert!(hooks["hooks"].get("PermissionRequest").is_none());
+        let manifest: Value = serde_json::from_slice(&std::fs::read(plugin_dir().join(".claude-plugin/plugin.json")).unwrap()).unwrap();
+        assert_eq!(manifest["name"], "coucou-hooks");
         assert!(status().installed);
+        assert_eq!(std::fs::read(settings_path()).unwrap(), settings);
 
-        // A file that moved since the preview is refused, and left alone.
+        // A plugin file that moved since the preview is refused.
         let stale = preview(false).unwrap();
-        std::fs::write(&path, br#"{"model":"someone-else-edited-this"}"#).unwrap();
-        let err = write(false, &stale.fingerprint).unwrap_err();
-        assert!(err.contains("changed since the preview"), "got: {err}");
-        let untouched: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(untouched["model"], "someone-else-edited-this");
+        std::fs::write(plugin_dir().join("hooks/hooks.json"), b"{}").unwrap();
+        assert!(write(false, &stale.fingerprint).unwrap_err().contains("changed since the preview"));
 
-        // Content we cannot parse is refused before anything is written.
-        std::fs::write(&path, b"{ broken").unwrap();
-        assert!(preview(true).is_err());
-        assert!(write(true, "whatever").is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), b"{ broken");
+        // Uninstall removes both files and still leaves settings.json alone.
+        write(false, &preview(false).unwrap().fingerprint).expect("uninstall should succeed");
+        assert!(!status().installed);
+        assert!(!plugin_dir().join(".claude-plugin/plugin.json").exists());
+        assert_eq!(std::fs::read(settings_path()).unwrap(), settings);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
